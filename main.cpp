@@ -1,5 +1,6 @@
 #include <iostream>
 #include <string>
+#include <algorithm>
 
 #include <opencv2/opencv.hpp>
 #include <opencv2/core/core.hpp>
@@ -43,6 +44,49 @@ cv::Mat DrawEpilines(const cv::Mat &img1, const std::vector<cv::Point2f> &pt1, c
     }
 
     return output_img.clone();
+}
+
+void Triangulate(const cv::Point2f &pt1, const cv::Point2f &pt2, const cv::Mat &P1, const cv::Mat &P2, cv::Mat &X) {
+    cv::Mat A(4, 4, CV_64F);
+    A.row(0) = pt1.x * P1.row(2) - P1.row(0);
+    A.row(1) = pt1.y * P1.row(2) - P1.row(1);
+    A.row(2) = pt2.x * P2.row(2) - P2.row(0);
+    A.row(3) = pt2.y * P2.row(2) - P2.row(1);
+
+    cv::Mat u, w, vt;
+    cv::SVD::compute(A, w, u, vt);
+    X = vt.row(3).t();
+    X = X.rowRange(0,3) / X.at<double>(3);
+}
+
+int CheckGoodPoint(const std::vector<cv::Point2f> &pt1, const std::vector<cv::Point2f> &pt2, const cv::Mat &K,
+                    const cv::Mat &P1, const cv::Mat &P2) {
+    int num_goods=0;
+    cv::Mat P1_norm = K * P1;
+    cv::Mat P2_norm = K * P2;
+    for (int i=0; i<pt1.size(); i++) {
+        cv::Mat X, X_prime;
+        // std::cout << "round: " << i << std::endl;
+        // std::cout << "pt1" << pt1[i] << std::endl;
+        // std::cout << "pt2" << pt2[i] << std::endl;
+        Triangulate(pt1[i], pt2[i], P1_norm, P2_norm, X);
+        // std::cout << "triangulated X" << X << std::endl;
+
+        if (X.at<double>(0) > 100 || X.at<double>(1) > 100 || X.at<double>(2) > 100)
+            continue;
+        if (X.at<double>(2) <= 0)
+            continue;
+        X_prime = P2.colRange(0,3) * X + P2.col(3);
+        // std::cout << "X " << X << std::endl;
+        // std::cout << "X prime " << X_prime << std::endl;
+
+        if (X_prime.at<double>(0) > 100 || X_prime.at<double>(1) > 100 || X_prime.at<double>(2) > 100)
+            continue;
+        if (X_prime.at<double>(2) <= 0)
+            continue;
+        num_goods++;
+    }
+    return num_goods;
 }
 
 int main (int argc, char **argv) {
@@ -156,28 +200,70 @@ int main (int argc, char **argv) {
         std::cout << "determinant(E): " << cv::determinant(E) << std::endl;
         // decompose [R t] from E
         // svd
-        cv::SVD svd(E, cv::SVD::MODIFY_A);
-        cv::Mat svd_u = svd.u, svd_vt = svd.vt, svd_w = svd.w;
+        cv::Mat u,w,vt;
+        cv::SVD::compute(E, w, u, vt);
         // check equality
-        double ratio = fabs(svd_w.at<double>(0) / svd_w.at<double>(1));
+        double ratio = fabs(w.at<double>(0) / w.at<double>(1));
         if (ratio > 1.0) ratio = 1.0 / ratio;
         if (ratio <0.7) {
             std::cout << "sigular values are too far away: " << ratio << std::endl;
             continue;
         } 
-        // TODO: compute average of svd_w, compute E, decopose E agian
-
-        cv::Mat w = (cv::Mat_<double>(3,3) << 0, -1, 0, 1, 0, 0, 0, 0, 1);
-        cv::Mat R0 = svd_u * w * svd_vt;
-        cv::Mat R1 = svd_u * w.t() * svd_vt;
-        cv::Mat t0 = svd_u.col(2);
-        cv::Mat t1 = -svd_u.col(2);
+        std::cout << "ratio: " << ratio << std::endl;
+        cv::Mat W = (cv::Mat_<double>(3,3) << 0, -1, 0, 1, 0, 0, 0, 0, 1);
+        cv::Mat R0 = u * W * vt;
+        if (cv::determinant(R0) < 0)
+            R0 = -R0;
+        cv::Mat R1 = u * W.t() * vt;
+        if (cv::determinant(R1) < 0)
+            R1 = -R1;
+        cv::Mat t0 = u.col(2);
+        cv::Mat t1 = -u.col(2);
 
         // test four solutions
+        cv::Mat P0 = cv::Mat::eye(3,4,R0.type());
+        std::vector<cv::Mat> candidates;
+        for (int i=0; i<4; i++)
+            candidates.push_back(cv::Mat(3,4,R0.type()));
+        R0.copyTo(candidates[0].colRange(0,3));t0.copyTo(candidates[0].col(3));
+        R0.copyTo(candidates[1].colRange(0,3));t1.copyTo(candidates[1].col(3));
+        R1.copyTo(candidates[2].colRange(0,3));t0.copyTo(candidates[2].col(3));
+        R1.copyTo(candidates[3].colRange(0,3));t1.copyTo(candidates[3].col(3));
+        // candidates[0].colRange(0,3) = R0*1.0; candidates[0].col(3) = t*1.0;
+        // candidates[1].colRange(0,3) = R0*1.0; candidates[1].col(3) = -t*1.0;
+        // candidates[2].colRange(0,3) = R1*1.0; candidates[2].col(3) = t*1.0;
+        // candidates[3].colRange(0,3) = R1*1.0; candidates[3].col(3) = -t*1.0;
         
+        // cv::Mat P1(3,4,R0.type()), P2(3,4,R0.type()), P3(3,4,R0.type()), P4(3,4,R0.type());    
+        // std::cout << "R0: " << R0 << std::endl;
+        // std::cout << "R1: " << R1 << std::endl;
+        // std::cout << "t: " << t0 << std::endl;
+        // std::cout << "P1: " << candidates[0] << std::endl;
+        // std::cout << "P2: " << candidates[1] << std::endl;
+        // std::cout << "P3: " << candidates[2] << std::endl;
+        // std::cout << "P4: " << candidates[3] << std::endl;
+        
+        std::vector<int> num_good(4,0);
 
+        for (int i=0; i<4; i++) {            
+            num_good[i] = CheckGoodPoint(inlier_1, inlier_2, K, P0, candidates[i]);
+            std::cout << "num_good" << i << ": " << num_good[i] << std::endl;
+        }
 
+        cv::Mat camera_matrix;
+        std::vector<int>::iterator result = std::max_element(num_good.begin(), num_good.end());
+        int max_position = std::distance(num_good.begin(), result);
+        camera_matrix = candidates[max_position];
 
+        cv::Mat R, trans;
+        double focal = 517.3;
+        cv::Point2d pp(318.6, 255.3); 
+        cv::recoverPose(E, inlier_1, inlier_2, R, trans, focal, pp);
+        cv::Mat gt(3, 4, R.type());
+        gt.colRange(0,3) = R * 1.0;
+        gt.col(3) = trans * 1.0;
+        std::cout << "estimated: " << camera_matrix << std::endl;
+        std::cout << "gt: " << gt << std::endl;
 
         cv::Mat output_img = DrawEpilines(last_frame, inlier_1, F, frame, inlier_2);
         cv::imwrite("../images/epiline"+std::to_string(image_index++)+".jpg", output_img);
