@@ -1,6 +1,8 @@
 #include <iostream>
 #include <string>
 #include <algorithm>
+#include <thread>
+#include <mutex>
 
 #include <opencv2/opencv.hpp>
 #include <opencv2/core/core.hpp>
@@ -8,6 +10,13 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/calib3d/calib3d.hpp>
 #include <pangolin/pangolin.h>
+
+
+// global variables
+std::vector<cv::Mat> pose_history;
+std::vector<cv::Point3f> point_cloud;
+std::mutex pose_mutex;
+std::mutex map_point_mutex;
 
 cv::Mat DrawEpilines(const cv::Mat &img1, const std::vector<cv::Point2f> &pt1, const cv::Mat &F, 
                     cv::Mat &img2, const std::vector<cv::Point2f> &pt2) {
@@ -164,44 +173,154 @@ void DecomposeEssentialMatrix(const std::vector<cv::Point2f> &pt1,
     // std::cout << "gt: " << gt << std::endl;
 }
 
-void TriangulateUnseenPoints(const std::vector<cv::Point2f> &pt1,
-                            const std::vector<cv::Point2f> &pt2,
-                            std::vector<cv::Point3f> &point_cloud, 
+std::vector<cv::Point2f> TriangulateUnseenPoints(const std::vector<cv::Point2f> &pt1,
+                            const std::vector<cv::Point2f> &pt2, 
                             const cv::Mat &last_pose,
                             const cv::Mat &current_pose,
                             const cv::Mat &K,
-                            int widht,
+                            int width,
                             int height) {
     // reproject
+    std::unique_lock<std::mutex> lk(map_point_mutex);
     std::vector<cv::Point2f> reproject_points;
 
     for (int i=0; i<point_cloud.size(); i++) {
         cv::Mat homogeneous_point = (cv::Mat_<double>(4, 1) << point_cloud[i].x, point_cloud[i].y, point_cloud[i].z, 1.0);
-        std::cout << "homogeneous_point : " << point_cloud[i] << std::endl;
-        std::cout << "homogeneous_point : " << homogeneous_point << std::endl;
         cv::Mat reproject_point = K * current_pose.rowRange(0,3) * homogeneous_point;
-        reproject_point = reproject_point.rowRange(0,3) / reproject_point.at<double>(3);    
-        reproject_points.push_back(cv::Point2f(reproject_point.at<double>(0), reproject_point.at<double>(1)));  
-        std::cout << "reproject point: " << reproject_point << std::endl;          
+        reproject_point = reproject_point.rowRange(0,2) / reproject_point.at<double>(2);   
+        double x = reproject_point.at<double>(0), y = reproject_point.at<double>(1);
+        if (x>=0 && x<width && y>=0 && y<height) 
+            reproject_points.push_back(cv::Point2f(x, y)); 
+        // else 
+        //     std::cout << "reproject points: " << reproject_point << std::endl;   
     }
        
     std::vector<bool> unseen(pt2.size(), true);
+    std::vector<bool> matched_reprojection(reproject_points.size(), false);
     for (int i=0; i<pt2.size(); i++) {
+        double min_dist = sqrt(width*width + height*height);
+        int min_index = -1;
         for (int j=0; j<reproject_points.size(); j++) {    
+            if (matched_reprojection[j])
+                continue;
             double dist = cv::norm(pt2[i] - reproject_points[j]);
-            if (dist < 2) {
-                unseen[i] = false;
-                break;
+            if (dist < min_dist) {
+                min_index = j;
+                min_dist = dist;
             }                
-        }                
+        }       
+        if (min_dist < 3) {
+            unseen[i] = false;
+            matched_reprojection[min_index] = true;
+            // std::cout << "min distance: " << min_dist << std::endl;   
+        }   
     }
 
+    // std::cout << "point cloud size in: " << point_cloud.size() << std::endl;
     for (int i=0; i<pt2.size(); i++) {
         if (!unseen[i])
             continue;
         cv::Mat X;
         Triangulate(pt1[i], pt2[i], last_pose, current_pose, X);
         point_cloud.push_back(cv::Point3f(X.at<double>(0), X.at<double>(1), X.at<double>(2)));
+    }
+    // std::cout << "point cloud size out: " << point_cloud.size() << std::endl;
+
+    return reproject_points;
+}
+
+cv::Mat DrawReprojectPoints(const cv::Mat &img, const std::vector<cv::Point2f> &reproject_points, const std::vector<cv::Point2f> &pts) {
+    cv::Mat out_img(img.size(), img.type());
+    img.copyTo(out_img);
+    cv::Scalar color1(255, 0, 0);
+    for (int i=0; i<reproject_points.size(); i++) 
+        cv::circle(out_img, reproject_points[i], 2, color1);
+
+    cv::Scalar color2(0, 255, 0);
+    for (int i=0; i<pts.size(); i++) 
+        cv::circle(out_img, pts[i], 1, color2);
+
+    return out_img.clone();
+}
+
+void DrawPoses() {
+    std::unique_lock<std::mutex> lk(pose_mutex);
+    const float w = 0.1;
+    const float h = w*0.75;
+    const float z = w*0.6;
+    std::cout << "pose size: " << pose_history.size() << std::endl;
+    for (int i=0; i<pose_history.size(); i++) {
+        cv::Mat current_pose = pose_history[i].clone();
+
+        glPushMatrix();
+        glMultMatrixf(current_pose.ptr<GLfloat>(0));
+        glLineWidth(1.0);
+        glColor3f(0.0f, 0.0f, 1.0f);
+        glBegin(GL_LINES);
+        glVertex3f(0,0,0);
+        glVertex3f(w,h,z);
+        glVertex3f(0,0,0);
+        glVertex3f(w,-h,z);
+        glVertex3f(0,0,0);
+        glVertex3f(-w,-h,z);
+        glVertex3f(0,0,0);
+        glVertex3f(-w,h,z);
+
+        glVertex3f(w,h,z);
+        glVertex3f(w,-h,z);
+
+        glVertex3f(-w,h,z);
+        glVertex3f(-w,-h,z);
+
+        glVertex3f(-w,h,z);
+        glVertex3f(w,h,z);
+
+        glVertex3f(-w,-h,z);
+        glVertex3f(w,-h,z);
+
+        glEnd();
+        glPopMatrix();
+    }
+}
+
+void DrawMapPoints() {
+    std::unique_lock<std::mutex> lk(map_point_mutex);
+    for (int i=0; i<point_cloud.size(); i++) {
+        
+    }
+}
+
+void Display() {
+    std::cout << "display" << std::endl;
+
+    pangolin::CreateWindowAndBind("Map Viewer", 1024, 768);
+    
+    glEnable(GL_DEPTH_TEST);
+    // Issue specific OpenGl we might need
+    glEnable (GL_BLEND);
+    glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    pangolin::CreatePanel("menu").SetBounds(0.0, 1.0, 0.0, pangolin::Attach::Pix(175));
+    pangolin::OpenGlRenderState s_cam(pangolin::ProjectionMatrix(1024, 768, 600, 600, 512, 389, 0.1, 1000),
+                                    pangolin::ModelViewLookAt(-0,0.5,-3, 0,0,0, pangolin::AxisY));
+    
+    pangolin::View& d_cam = pangolin::CreateDisplay()
+                            .SetBounds(0.0, 1.0, pangolin::Attach::Pix(175), 1.0, -1024.0f/768.0f)
+                            .SetHandler(new pangolin::Handler3D(s_cam));
+    pangolin::OpenGlMatrix Twc;
+    Twc.SetIdentity();
+
+    while(true) {
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        d_cam.Activate(s_cam);
+        glClearColor(1.0f,1.0f,1.0f,1.0f);
+        // glColor3f(1.0,1.0,1.0);
+
+        // pangolin::glDrawColouredCube();
+        DrawPoses();
+        DrawMapPoints();
+        pangolin::FinishFrame();
     }
 }
 
@@ -223,12 +342,13 @@ int main (int argc, char **argv) {
     cv::Mat K = (cv::Mat_<double>(3,3)<<517.3, 0.0, 318.6, 0.0, 516.5, 255.3, 0.0, 0.0, 1);
     std::cout << "K" << K << std::endl;
 
-    std::vector<cv::Mat> pose_history;
-    std::vector<cv::Point3f> point_cloud;
     std::vector<cv::Mat> descriptor_history;
     std::vector<std::vector<cv::KeyPoint>> key_point_history;
     cv::Mat last_pose(4,4,CV_64F);
     int width, height;
+
+    // display
+    std::thread display(Display);
 
     while (true) {
         cv::Mat original_frame;
@@ -249,7 +369,11 @@ int main (int argc, char **argv) {
             last_frame = frame;
             last_descriptors = descriptors;
             last_key_points = key_points; 
-            pose_history.push_back(current_pose.clone());
+            {
+                std::unique_lock<std::mutex> lk(pose_mutex);
+                pose_history.push_back(current_pose.clone());
+            }
+
             descriptor_history.push_back(descriptors.clone());
             key_point_history.push_back(key_points);
             last_pose = current_pose.clone();
@@ -314,7 +438,9 @@ int main (int argc, char **argv) {
         current_pose *= last_pose;
         // std::cout << "R type: " << R.type() << std::endl;
         // reproject point cloud into the current frame, triangulate unseen points  
-        TriangulateUnseenPoints(inlier_1, inlier_2, point_cloud, last_pose, current_pose, K, width, height); 
+        std::vector<cv::Point2f> reprojected_points = TriangulateUnseenPoints(inlier_1, inlier_2, last_pose, current_pose, K, width, height); 
+        
+        cv::Mat reproject_img = DrawReprojectPoints(frame, reprojected_points, inlier_2);
 
         cv::Mat output_img = DrawEpilines(last_frame, inlier_1, F, frame, inlier_2);
         cv::imwrite("../images/epiline"+std::to_string(image_index++)+".jpg", output_img);
@@ -327,7 +453,7 @@ int main (int argc, char **argv) {
         last_pose = current_pose;
         
         // cv::imshow("image matches", output_img);
-        // cv::imshow("image matches", output_img);
+        cv::imshow("image matches", reproject_img);
         if (cv::waitKey(30) > 0) break;
     }
     std::cout << "hello world" << std::endl;
