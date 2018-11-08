@@ -66,7 +66,7 @@ void Triangulate(const cv::Point2f &pt1, const cv::Point2f &pt2, const cv::Mat &
     cv::SVD::compute(A, w, u, vt);
     X = vt.row(3).t();
     X = X.rowRange(0,3) / X.at<double>(3);
-    X = X / cv::norm(X);
+    // X = X / cv::norm(X);
 }
 
 int CheckGoodPoint(const std::vector<cv::Point2f> &pt1, const std::vector<cv::Point2f> &pt2, const cv::Mat &K,
@@ -74,15 +74,27 @@ int CheckGoodPoint(const std::vector<cv::Point2f> &pt1, const std::vector<cv::Po
     int num_goods=0;
     cv::Mat P1_norm = K * P1;
     cv::Mat P2_norm = K * P2;
+    // cv::Mat P1_norm = P1;
+    // cv::Mat P2_norm = P2;
     for (int i=0; i<pt1.size(); i++) {
         cv::Mat X, X_prime;
         // std::cout << "round: " << i << std::endl;
         // std::cout << "pt1" << pt1[i] << std::endl;
         // std::cout << "pt2" << pt2[i] << std::endl;
+        // cv::Mat myX;
         Triangulate(pt1[i], pt2[i], P1_norm, P2_norm, X);
-        // std::cout << "triangulated X" << X << std::endl;
+        // cv::triangulatePoints(P1_norm, P2_norm, cv::Mat(pt1[i]), cv::Mat(pt2[i]), X);
+        // X.convertTo(X, CV_64F);
 
-        if (X.at<double>(0) > 100 || X.at<double>(1) > 100 || X.at<double>(2) > 100)
+        // X = X.rowRange(0,3) / X.at<double>(3);
+        // X = X / cv::norm(X);
+        // if (cv::norm(X-myX) != 0) {
+        //     std::cout << "X: " << X.t() << std::endl;
+        //     std::cout << "myX: " << myX.t() << std::endl;
+        // }
+        // std::cout << "triangulated X" << X << std::endl;
+        // std::cout << "X(3)" << X.at<double>(3) << std::endl;
+        if (X.at<double>(0) > 50 || X.at<double>(1) > 50 || X.at<double>(2) > 50)
             continue;
         if (X.at<double>(2) <= 0)
             continue;
@@ -90,7 +102,7 @@ int CheckGoodPoint(const std::vector<cv::Point2f> &pt1, const std::vector<cv::Po
         // std::cout << "X " << X << std::endl;
         // std::cout << "X prime " << X_prime << std::endl;
 
-        if (X_prime.at<double>(0) > 100 || X_prime.at<double>(1) > 100 || X_prime.at<double>(2) > 100)
+        if (X_prime.at<double>(0) > 50 || X_prime.at<double>(1) > 50 || X_prime.at<double>(2) > 50)
             continue;
         if (X_prime.at<double>(2) <= 0)
             continue;
@@ -98,6 +110,130 @@ int CheckGoodPoint(const std::vector<cv::Point2f> &pt1, const std::vector<cv::Po
     }
     return num_goods;
 }
+
+// void ComputeGoodPointsOpenCV() {
+//     double fx = K.at<double>(0,0);
+//     double fy = K.at<double>(1,1);
+//     double cx = K.at<double>(0,2);
+//     double cy = K.at<double>(1,2);
+//     // cv::InputArray arr1 = pt1;
+//     // cv::InputArray arr2 = pt2;
+//     // cv::Mat points1 = arr1.getMat(), points2 = arr2.getMat();
+//     // points1.convertTo(points1, CV_64F);
+//     // points2.convertTo(points2, CV_64F);
+//     // std::cout << "points1 size: " << points1.size() << std::endl;
+//     // std::cout << "points2 size: " << points2.size() << std::endl;
+//     // std::cout << "pt1 size: " << pt1.size() << std::endl;
+//     // std::cout << "pt2 size: " << pt2.size() << std::endl;
+//     // normalize points
+//     // points1.col(0) = (points1.col(0) - cx) / fx;
+//     // points1.col(1) = (points1.col(1) - cy) / fy;
+//     // points2.col(0) = (points2.col(0) - cx) / fx;
+//     // points2.col(1) = (points2.col(1) - cy) / fy;
+    
+//     // points1 = points1.t();
+//     // points2 = points2.t();
+
+//     double distanceThresh = 50;
+//     cv::Mat Q;
+//     cv::Mat P_first, P_second, P_temp, candidate_32;
+//     P_first = K*P0;
+//     P_first.convertTo(P_first, CV_32F);
+//     P_temp = K*candidates[0];
+//     P_temp.convertTo(P_second, CV_32F);
+//     std::cout << "P0 type: " << P0.type() << std::endl;
+//     std::cout << "candidates[0] type: " <<  candidates[0].type() << std::endl;
+//     std::cout << "K type: " <<  K.type() << std::endl;
+//     // std::cout << "points2 type: " <<  points2.type() << std::endl;
+//     cv::triangulatePoints(P_first, P_second, pt1, pt2, Q);
+
+//     cv::Mat mask1 = Q.row(2).mul(Q.row(3)) > 0;
+//     Q.row(0) /= Q.row(3);
+//     Q.row(1) /= Q.row(3);
+//     Q.row(2) /= Q.row(3);
+//     Q.row(3) /= Q.row(3);
+//     mask1 = (Q.row(2) < distanceThresh) & mask1;
+//     candidates[0].convertTo(candidate_32, CV_32F);
+//     Q =  candidate_32 * Q;
+//     mask1 = (Q.row(2) > 0) & mask1;
+//     mask1 = (Q.row(2) < distanceThresh) & mask1;
+    
+//     P_temp = K*candidates[1];
+//     P_temp.convertTo(P_second, CV_32F);
+//     cv::triangulatePoints(P_first, P_second, pt1, pt2, Q);
+//     cv::Mat mask2= Q.row(2).mul(Q.row(3)) > 0;
+//     Q.row(0) /= Q.row(3);
+//     Q.row(1) /= Q.row(3);
+//     Q.row(2) /= Q.row(3);
+//     Q.row(3) /= Q.row(3);
+//     mask2 = (Q.row(2) < distanceThresh) & mask2;
+//     candidates[1].convertTo(candidate_32, CV_32F);
+//     Q = candidate_32 * Q;
+//     mask2 = (Q.row(2) > 0) & mask2;
+//     mask2 = (Q.row(2) < distanceThresh) & mask2;
+
+//     P_temp = K*candidates[2];
+//     P_temp.convertTo(P_second, CV_32F);
+//     cv::triangulatePoints(P_first, P_second, pt1, pt2, Q);
+//     cv::Mat mask3 = Q.row(2).mul(Q.row(3)) > 0;
+//     Q.row(0) /= Q.row(3);
+//     Q.row(1) /= Q.row(3);
+//     Q.row(2) /= Q.row(3);
+//     Q.row(3) /= Q.row(3);
+//     mask3 = (Q.row(2) < distanceThresh) & mask3;
+//     candidates[2].convertTo(candidate_32, CV_32F);
+//     Q = candidate_32 * Q;
+//     mask3 = (Q.row(2) > 0) & mask3;
+//     mask3 = (Q.row(2) < distanceThresh) & mask3;
+
+//     P_temp = K*candidates[3];
+//     P_temp.convertTo(P_second, CV_32F);
+//     cv::triangulatePoints(P_first, P_second, pt1, pt2, Q);
+//     cv::Mat mask4 = Q.row(2).mul(Q.row(3)) > 0;
+//     Q.row(0) /= Q.row(3);
+//     Q.row(1) /= Q.row(3);
+//     Q.row(2) /= Q.row(3);
+//     Q.row(3) /= Q.row(3);
+//     mask4 = (Q.row(2) < distanceThresh) & mask4;
+//     candidates[3].convertTo(candidate_32, CV_32F);
+//     Q = candidate_32 * Q;
+//     mask4 = (Q.row(2) > 0) & mask4;
+//     mask4 = (Q.row(2) < distanceThresh) & mask4;
+
+//     int good1 = cv::countNonZero(mask1);
+//     int good2 = cv::countNonZero(mask2);
+//     int good3 = cv::countNonZero(mask3);
+//     int good4 = cv::countNonZero(mask4);
+
+//     std::cout << "number of goods from opencv" << std::endl;
+//     std::cout << "good1: " << good1 << std::endl;
+//     std::cout << "good2: " << good2 << std::endl;
+//     std::cout << "good3: " << good3 << std::endl;
+//     std::cout << "good4: " << good4 << std::endl;
+//     std::cout << "number of goods from own" << std::endl;
+//     std::cout << "good1: " << num_good[0] << std::endl;
+//     std::cout << "good2: " << num_good[1] << std::endl;
+//     std::cout << "good3: " << num_good[2] << std::endl;
+//     std::cout << "good4: " << num_good[3] << std::endl;
+    // cv::Mat cvR, cvTrans;
+    // double focal = 517.3;
+    // cv::Point2d pp(318.6, 255.3); 
+    // cv::recoverPose(E, pt1, pt2, cvR, cvTrans, focal, pp);
+    // cv::Mat gt(3, 4, cvR.type());
+    // gt.colRange(0,3) = cvR * 1.0;
+    // gt.col(3) = cvTrans * 1.0;
+    // cv::Mat camera_matrix(3, 4, R.type());
+    // camera_matrix.colRange(0,3) = R * 1.0;
+    // camera_matrix.col(3) = t * 1.0;
+    // if (cv::norm(camera_matrix - gt) != 0) {
+    //     std::cout << "estimated: " << camera_matrix << std::endl;
+    //     std::cout << "gt: " << gt << std::endl;
+    //     for (int i=0; i<4; i++) {            
+    //         std::cout << "num_good" << i << ": " << num_good[i] << std::endl;
+    //         std::cout << "candidate" << i << ": " << candidates[i] << std::endl;
+    //     }
+    // }
+// }
 
 void DecomposeEssentialMatrix(const std::vector<cv::Point2f> &pt1, 
                         const std::vector<cv::Point2f> &pt2, 
@@ -161,16 +297,9 @@ void DecomposeEssentialMatrix(const std::vector<cv::Point2f> &pt1,
     int max_position = std::distance(num_good.begin(), result);
     R = candidates[max_position].colRange(0,3).clone();
     t = candidates[max_position].col(3).clone();
-
-    // cv::Mat R, trans;
     // double focal = 517.3;
     // cv::Point2d pp(318.6, 255.3); 
-    // cv::recoverPose(E, pt1, pt2, R, trans, focal, pp);
-    // cv::Mat gt(3, 4, R.type());
-    // gt.colRange(0,3) = R * 1.0;
-    // gt.col(3) = trans * 1.0;
-    // std::cout << "estimated: " << camera_matrix << std::endl;
-    // std::cout << "gt: " << gt << std::endl;
+    // cv::recoverPose(E, pt1, pt2, R, t, focal, pp);
 }
 
 std::vector<cv::Point2f> TriangulateUnseenPoints(const std::vector<cv::Point2f> &pt1,
@@ -197,6 +326,7 @@ std::vector<cv::Point2f> TriangulateUnseenPoints(const std::vector<cv::Point2f> 
        
     std::vector<bool> unseen(pt2.size(), true);
     std::vector<bool> matched_reprojection(reproject_points.size(), false);
+    int unseen_count = 0;
     for (int i=0; i<pt2.size(); i++) {
         double min_dist = sqrt(width*width + height*height);
         int min_index = -1;
@@ -209,23 +339,37 @@ std::vector<cv::Point2f> TriangulateUnseenPoints(const std::vector<cv::Point2f> 
                 min_dist = dist;
             }                
         }       
-        if (min_dist < 3) {
+        if (min_dist < 10) {
             unseen[i] = false;
             matched_reprojection[min_index] = true;
-            // std::cout << "min distance: " << min_dist << std::endl;   
+            // std::cout << "min distance: " << min_dist << std::endl;
+            unseen_count++;   
         }   
     }
-
-    // std::cout << "point cloud size in: " << point_cloud.size() << std::endl;
+    // std::cout << "point count: " << pt2.size() << std::endl;
+    // std::cout << "unseen count: " << unseen_count << std::endl;
     for (int i=0; i<pt2.size(); i++) {
         if (!unseen[i])
             continue;
-        cv::Mat X;
-        Triangulate(pt1[i], pt2[i], last_pose, current_pose, X);
+        cv::Mat X, X_prime;
+        Triangulate(pt1[i], pt2[i], K*last_pose.rowRange(0,3), K*current_pose.rowRange(0,3), X);
+        
+        if (X.at<double>(0) > 50 || X.at<double>(1) > 50 || X.at<double>(2) > 50)
+            continue;
+        if (X.at<double>(2) <= 0)
+            continue;
+        X_prime = current_pose.colRange(0,3).rowRange(0,3) * X + current_pose.rowRange(0,3).col(3);
+        // std::cout << "X " << X << std::endl;
+        // std::cout << "X prime " << X_prime << std::endl;
+
+        if (X_prime.at<double>(0) > 50 || X_prime.at<double>(1) > 50 || X_prime.at<double>(2) > 50)
+            continue;
+        if (X_prime.at<double>(2) <= 0)
+            continue;
+
         point_cloud.push_back(cv::Point3f(X.at<double>(0), X.at<double>(1), X.at<double>(2)));
     }
-    // std::cout << "point cloud size out: " << point_cloud.size() << std::endl;
-
+    
     return reproject_points;
 }
 
@@ -244,18 +388,25 @@ cv::Mat DrawReprojectPoints(const cv::Mat &img, const std::vector<cv::Point2f> &
 }
 
 void DrawPoses() {
-    std::unique_lock<std::mutex> lk(pose_mutex);
-    const float w = 0.1;
+    std::vector<cv::Mat> poses;
+    {
+        std::unique_lock<std::mutex> lk(pose_mutex);
+        poses = pose_history;
+    }
+    const float w = 0.05;
     const float h = w*0.75;
     const float z = w*0.6;
-    std::cout << "pose size: " << pose_history.size() << std::endl;
-    for (int i=0; i<pose_history.size(); i++) {
-        cv::Mat current_pose = pose_history[i].clone();
 
+    // std::cout << "pose size: " << pose_history.size() << std::endl;
+    for (int i=0; i<poses.size(); i++) {
+        cv::Mat current_pose = poses[i].clone();
+        current_pose.convertTo(current_pose, CV_32F);
         glPushMatrix();
+
         glMultMatrixf(current_pose.ptr<GLfloat>(0));
+
         glLineWidth(1.0);
-        glColor3f(0.0f, 0.0f, 1.0f);
+        glColor3f(0.0f,0.0f,1.0f);
         glBegin(GL_LINES);
         glVertex3f(0,0,0);
         glVertex3f(w,h,z);
@@ -277,17 +428,27 @@ void DrawPoses() {
 
         glVertex3f(-w,-h,z);
         glVertex3f(w,-h,z);
-
         glEnd();
+
         glPopMatrix();
     }
 }
 
 void DrawMapPoints() {
-    std::unique_lock<std::mutex> lk(map_point_mutex);
-    for (int i=0; i<point_cloud.size(); i++) {
-        
+    std::vector<cv::Point3f> points;
+    {
+        std::unique_lock<std::mutex> lk(map_point_mutex);
+        points = point_cloud;
     }
+    // std::cout << "point_cloud size: " << point_cloud.size() << std::endl;
+    glPointSize(2);
+    glBegin(GL_POINTS);
+    glColor3f(1.0,0.0,0.0);
+    for (int i=0; i<points.size(); i++) {
+        glVertex3f(points[i].x, points[i].y, points[i].z);
+        // std::cout << "point: " << points[i] << std::endl;
+    }
+    glEnd();
 }
 
 void Display() {
@@ -301,8 +462,8 @@ void Display() {
     glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     pangolin::CreatePanel("menu").SetBounds(0.0, 1.0, 0.0, pangolin::Attach::Pix(175));
-    pangolin::OpenGlRenderState s_cam(pangolin::ProjectionMatrix(1024, 768, 600, 600, 512, 389, 0.1, 1000),
-                                    pangolin::ModelViewLookAt(-0,0.5,-3, 0,0,0, pangolin::AxisY));
+    pangolin::OpenGlRenderState s_cam(pangolin::ProjectionMatrix(1024, 768, 500, 500, 512, 389, 0.01, 10000),
+                                    pangolin::ModelViewLookAt(0,-0.7,-1.8, 0,0,0, 0.0,-1.0, 0.0));
     
     pangolin::View& d_cam = pangolin::CreateDisplay()
                             .SetBounds(0.0, 1.0, pangolin::Attach::Pix(175), 1.0, -1024.0f/768.0f)
@@ -313,6 +474,38 @@ void Display() {
     while(true) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+        {
+            // std::cout  << "come here" << std::endl;
+            cv::Mat curr_pose=cv::Mat::eye(4,4,CV_32F);
+            {
+                std::unique_lock<std::mutex> lk(pose_mutex);
+                if (!pose_history.empty())
+                    pose_history.back().convertTo(curr_pose, CV_32F);             
+            }
+            // std::cout  << "current pose" << curr_pose << std::endl;
+            Twc.m[0] = curr_pose.at<float>(0,0);
+            Twc.m[1] = curr_pose.at<float>(1,0);
+            Twc.m[2] = curr_pose.at<float>(2,0);
+            Twc.m[3]  = 0.0;
+
+            Twc.m[4] = curr_pose.at<float>(0,1);
+            Twc.m[5] = curr_pose.at<float>(1,1);
+            Twc.m[6] = curr_pose.at<float>(2,1);
+            Twc.m[7]  = 0.0;
+
+            Twc.m[8] = curr_pose.at<float>(0,2);
+            Twc.m[9] = curr_pose.at<float>(1,2);
+            Twc.m[10] = curr_pose.at<float>(2,2);
+            Twc.m[11]  = 0.0;
+
+            Twc.m[12] = curr_pose.at<float>(0,3);
+            Twc.m[13] = curr_pose.at<float>(1,3);
+            Twc.m[14] = curr_pose.at<float>(2,3);
+            Twc.m[15]  = 1.0;
+        }
+
+        s_cam.Follow(Twc);
+
         d_cam.Activate(s_cam);
         glClearColor(1.0f,1.0f,1.0f,1.0f);
         // glColor3f(1.0,1.0,1.0);
@@ -320,6 +513,7 @@ void Display() {
         // pangolin::glDrawColouredCube();
         DrawPoses();
         DrawMapPoints();
+        // pangolin::glDrawCircle(0,0,10.0);
         pangolin::FinishFrame();
     }
 }
@@ -431,7 +625,7 @@ int main (int argc, char **argv) {
         // decompose [R t] from E
         cv::Mat R, t;
         DecomposeEssentialMatrix(inlier_1, inlier_2, E, K, R, t);
-                
+     
         R.copyTo(current_pose.colRange(0,3).rowRange(0,3));
         t.copyTo(current_pose.col(3).rowRange(0,3));
         
@@ -451,6 +645,11 @@ int main (int argc, char **argv) {
         last_descriptors = descriptors;
         last_key_points = key_points;
         last_pose = current_pose;
+        // if (pose_history.size() < 50)
+        {
+            std::unique_lock<std::mutex> lk(pose_mutex);
+            pose_history.push_back(current_pose.clone());
+        }
         
         // cv::imshow("image matches", output_img);
         cv::imshow("image matches", reproject_img);
