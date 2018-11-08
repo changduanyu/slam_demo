@@ -301,6 +301,14 @@ void DecomposeEssentialMatrix(const std::vector<cv::Point2f> &pt1,
     // cv::Point2d pp(318.6, 255.3); 
     // cv::recoverPose(E, pt1, pt2, R, t, focal, pp);
 }
+// TODO: after initialization, search the corresponding 3d points in the map points based on the descriptors
+// then, optimize the pose using bundle adjustment with matched 3d points
+void SearchByProjection(const std::vector<cv::Point3f> &object_pts, 
+                        const std::vector<cv::Point2f> &image_pts, 
+                        const cv::Mat &K,
+                        const cv::Mat &m) {
+    
+}
 
 std::vector<cv::Point2f> TriangulateUnseenPoints(const std::vector<cv::Point2f> &pt1,
                             const std::vector<cv::Point2f> &pt2, 
@@ -369,6 +377,7 @@ std::vector<cv::Point2f> TriangulateUnseenPoints(const std::vector<cv::Point2f> 
 
         point_cloud.push_back(cv::Point3f(X.at<double>(0), X.at<double>(1), X.at<double>(2)));
     }
+    std::cout << "point cloud size: " << point_cloud.size() << std::endl;
     
     return reproject_points;
 }
